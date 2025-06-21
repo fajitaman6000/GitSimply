@@ -89,12 +89,48 @@ class PermutationManager(tk.Tk):
 
         self.is_detached = state_res["data"]["is_detached"]
         if self.is_detached:
+            # This is the "unusual state" recovery logic. It triggers if we are in
+            # detached HEAD, but the app doesn't have session info (e.g., after a crash).
             if not self.detached_from_branch or not self.detached_commit_info:
-                messagebox.showwarning("Unstable State", "The app was closed in an unusual state. Returning to the 'main' branch for safety.", parent=self)
-                self.git_helper.checkout('main')
+                if self.git_helper.has_changes():
+                    # If there are changes, we must guide the user to save them.
+                    msg = ("The app was closed unexpectedly while you were viewing a past version, and you have unsaved work.\n\n"
+                           "To protect your work, you must save it to a new branch.\n\n"
+                           "Please enter a name for this new 'recovery' branch.")
+                    
+                    current_hash_res = self.git_helper.get_current_commit_hash()
+                    if not current_hash_res['success']:
+                        self._show_error(f"FATAL: Could not read the current project state to recover your work. Please resolve manually.\n{current_hash_res['error']}")
+                        return
+                    current_hash = current_hash_res['output']
+
+                    branch_name = self._prompt_for_new_branch_name("Recover Unsaved Work", msg)
+
+                    if not branch_name:
+                        messagebox.showerror("Action Canceled", "Your work cannot be recovered without creating a new branch. The application will remain in its current state. Please restart the app and create a branch to save your changes.", parent=self)
+                        return
+
+                    # Create a new branch from the detached HEAD position.
+                    result = self.git_helper.create_branch(branch_name, start_point=current_hash)
+                    if not result['success']:
+                        self._show_error(f"Failed to create recovery branch '{branch_name}':\n{result['error']}")
+                        return
+                    
+                    # Commit the existing changes to the new branch.
+                    commit_res = self.git_helper.commit("Recovered unsaved work from unexpected shutdown")
+                    if not commit_res['success']:
+                        self._show_error(f"Created recovery branch '{branch_name}' but failed to commit the snapshot.\nYour changes are still present but are uncommitted.\n\nError: {commit_res['error']}")
+                    
+                    messagebox.showinfo("Work Saved", f"Your unsaved work has been safely stored in a new branch named '{branch_name}'. The app will now load this new branch.", parent=self)
+                else:
+                    # No changes, so it's safe to go to main.
+                    messagebox.showwarning("Unstable State", "The app was closed in an unusual state with no unsaved changes. Returning to the 'main' branch for safety.", parent=self)
+                    self.git_helper.checkout('main')
+
                 self._clear_session_state()
                 self.update_ui_state()
                 return
+
             self._show_detached_view()
         else:
             self._clear_session_state()
@@ -119,7 +155,12 @@ class PermutationManager(tk.Tk):
             return
 
         self.detached_commit_info = self.history[selected_index]
-        self.detached_from_branch = self.active_branch
+        
+        # --- FIX: Only set the 'detached_from_branch' if we are currently on a branch. ---
+        # If we are already detached, we must preserve the original branch we came from.
+        if not self.is_detached:
+            self.detached_from_branch = self.active_branch
+
         self.is_viewing_latest = (selected_index == 0)
 
         self._save_session_state()
@@ -128,9 +169,9 @@ class PermutationManager(tk.Tk):
         if result["success"]:
             self.update_ui_state()
         else:
-            self._clear_session_state()
+            self._clear_session_state() # Clear potentially bad state
             self._show_error(result["error"])
-            self.update_ui_state()
+            self.update_ui_state() # Refresh to a safe state
 
     def _return_to_current(self):
         unsaved_status = self._handle_unsaved_changes()
@@ -218,7 +259,7 @@ class PermutationManager(tk.Tk):
         self.delete_button = ttk.Button(exp_action_frame, text="Delete Selected Branch", command=self._delete_branch, state=tk.DISABLED); self.delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
         action_frame = ttk.Frame(self.main_view_frame); action_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(35,0))
         ttk.Button(action_frame, text="Branch from Current State", command=self._new_branch).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        ttk.Button(action_frame, text=(f"Save Snapshot to Current Branch"), command=self._save_snapshot).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
+        ttk.Button(action_frame, text=(f"Save Snapshot inside Current Branch"), command=self._save_snapshot).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
         self.detached_view_frame = ttk.Frame(self.left_pane)
         detached_label_frame = ttk.LabelFrame(self.detached_view_frame, text="-- PAST VERSION LOADED --", padding=10); detached_label_frame.pack(fill=tk.BOTH, expand=True)
         self.detached_info_label = ttk.Label(detached_label_frame, text="WITHIN BRANCH:\nSnapshot:", justify=tk.LEFT, font=("Segoe UI", 10, "bold")); self.detached_info_label.pack(anchor=tk.W, pady=5)

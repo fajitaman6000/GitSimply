@@ -96,6 +96,9 @@ class GitHelper:
         return self._run_command(f"checkout -b {shlex.quote(new_branch_name)} {shlex.quote(start_point)}")
     def delete_branch(self, branch_name):
         return self._run_command(f"branch -D {shlex.quote(branch_name)}")
+    def get_current_commit_hash(self):
+        """Returns the full hash of the current commit (HEAD)."""
+        return self._run_command("rev-parse HEAD")
     def get_history(self, branch_name):
         sep, date_format = "|||GIT_SEP|||", "--date=format-local:'%Y-%m-%d %I:%M %p'"
         command = f"log {shlex.quote(branch_name)} --pretty=format:'%h{sep}%ad{sep}%s' {date_format} --"
