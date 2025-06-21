@@ -1,6 +1,7 @@
-The Permutation Manager
-The Permutation Manager is a lightweight, workflow-centric Git GUI built in Tkinter, designed for the solo developer, creative coder, or researcher.
+GitSimply is a lightweight, workflow-centric Git GUI built in Tkinter, designed for the solo developer, creative coder, or researcher.
+
 Its core philosophy is to abstract away Git's complex command-line syntax and focus entirely on a simple, intuitive "snapshot and experiment" workflow. All work is done within a single project folder, which the tool manages seamlessly for IDEs like VSCode.
+
 Key features include:
 Effortless Experimentation: Treat versions as "experiments" (branches) that can be created and switched between with a single click.
 Modal "Time Machine": Instead of just listing history, selecting a past snapshot enters a dedicated "Viewing the Past" mode, making it impossible to be confused about your current state.
