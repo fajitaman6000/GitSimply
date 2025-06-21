@@ -167,7 +167,6 @@ class PermutationManager(tk.Tk):
             self._show_error(result["error"])
             self._return_to_current()
 
-    # --- MODIFIED: Reworked to be smarter and more robust ---
     def _new_branch_from_detached(self):
         branch_name = self._prompt_for_new_branch_name(
             "New Branch From Past",
@@ -245,6 +244,7 @@ class PermutationManager(tk.Tk):
         self.hist_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.hist_list.tag_configure('oddrow', background='#E6F2FF')
         self.hist_list.tag_configure('evenrow', background="#C2CDD6")
+        self.hist_list.tag_configure('current_snapshot', background="#E4FFDD", font=('Segoe UI', 10, 'bold'))
         
         hist_action_frame = ttk.Frame(hist_frame); hist_action_frame.pack(fill=tk.X)
         ttk.Button(hist_action_frame, text="Enter Selected Snapshot", command=self._load_historical_version).pack(expand=True, fill=tk.X)
@@ -290,8 +290,24 @@ class PermutationManager(tk.Tk):
         if hist_res["success"]:
             self.history = hist_res["data"]
             for i, item in enumerate(self.history):
-                tag = 'oddrow' if i % 2 != 0 else 'evenrow'
-                self.hist_list.insert('', 'end', values=(f" {item['date']}", f" {item['subject']}"), tags=(tag,))
+                is_current_snapshot = False
+                if self.is_detached:
+                    # In detached mode, highlight the specific commit being viewed
+                    if item['hash'] == self.detached_commit_info.get('hash'):
+                        is_current_snapshot = True
+                else:
+                    # In normal mode, the "current" snapshot is the latest one (HEAD)
+                    if i == 0:
+                        is_current_snapshot = True
+                
+                # --- FIX: Apply highlight tag exclusively to prevent color override ---
+                tags_to_apply = []
+                if is_current_snapshot:
+                    tags_to_apply.append('current_snapshot')
+                else:
+                    tags_to_apply.append('oddrow' if i % 2 != 0 else 'evenrow')
+
+                self.hist_list.insert('', 'end', values=(f" {item['date']}", f" {item['subject']}"), tags=tuple(tags_to_apply))
         else:
             self.history = []
             self._show_error(hist_res["error"])
@@ -343,7 +359,6 @@ class PermutationManager(tk.Tk):
         if result["success"]: self.update_ui_state()
         else: self._show_error(result["error"])
 
-    # --- NEW: Helper method for robustly prompting for a new branch name ---
     def _prompt_for_new_branch_name(self, title, prompt):
         """Prompts user for a new branch name with validation, returns name or None."""
         all_branches = []
@@ -362,7 +377,6 @@ class PermutationManager(tk.Tk):
                 continue
             return name
 
-    # --- MODIFIED: Reworked to be smarter and use the new prompt helper ---
     def _new_branch(self):
         branch_name = self._prompt_for_new_branch_name(
             "New Branch",

@@ -107,7 +107,6 @@ class GitHelper:
                 if len(parts) == 3: history.append({"hash": parts[0], "date": parts[1], "subject": parts[2]})
         return {"success": True, "data": history}
 
-    # --- MODIFIED: Now also removes untracked files to fully discard changes ---
     def discard_changes(self):
         """Resets modified files and removes all untracked files and directories."""
         reset_res = self._run_command("reset --hard HEAD")
