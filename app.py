@@ -5,11 +5,10 @@ import os
 import json
 import platform
 import subprocess
-from git_helper import GitHelper
+from git_helper import GitHelper, SESSION_META_DIR
 
 APP_CONFIG_FILE = "config.json"
-# --- NEW: Define path for persistent session state ---
-SESSION_META_DIR = ".manager_meta"
+# --- The session directory is now imported from git_helper ---
 SESSION_FILE = "session.json"
 
 class PermutationManager(tk.Tk):
@@ -66,7 +65,10 @@ class PermutationManager(tk.Tk):
     def _clear_session_state(self, clear_vars=True):
         path = self._get_session_path()
         if path and os.path.exists(path):
-            os.remove(path)
+            try:
+                os.remove(path)
+            except OSError:
+                pass # Ignore if file is in use, etc.
         if clear_vars:
             self.detached_from_branch = ""
             self.detached_commit_info = {}
@@ -178,18 +180,18 @@ class PermutationManager(tk.Tk):
         main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL); main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         self.left_pane = ttk.Frame(main_pane, padding=10); main_pane.add(self.left_pane, weight=1)
         self.main_view_frame = ttk.Frame(self.left_pane)
-        exp_frame = ttk.LabelFrame(self.main_view_frame, text="Experiments", padding=10); exp_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        exp_frame = ttk.LabelFrame(self.main_view_frame, text="Experiments (Branches)", padding=10); exp_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         self.exp_list = tk.Listbox(exp_frame, exportselection=False, font=("Segoe UI", 10)); self.exp_list.pack(fill=tk.BOTH, expand=True, pady=(0,5))
         self.exp_list.bind("<<ListboxSelect>>", self._on_experiment_select)
         exp_action_frame = ttk.Frame(exp_frame); exp_action_frame.pack(fill=tk.X)
-        self.switch_button = ttk.Button(exp_action_frame, text="Switch To", command=self._switch_experiment, state=tk.DISABLED); self.switch_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        self.delete_button = ttk.Button(exp_action_frame, text="Delete", command=self._delete_experiment, state=tk.DISABLED); self.delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
+        self.switch_button = ttk.Button(exp_action_frame, text="Load Selected Experiment", command=self._switch_experiment, state=tk.DISABLED); self.switch_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        self.delete_button = ttk.Button(exp_action_frame, text="Delect Selected Experiment", command=self._delete_experiment, state=tk.DISABLED); self.delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
         action_frame = ttk.Frame(self.main_view_frame); action_frame.pack(fill=tk.X, side=tk.BOTTOM)
-        ttk.Button(action_frame, text="New Experiment", command=self._new_experiment).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        ttk.Button(action_frame, text="Save Snapshot", command=self._save_snapshot).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
+        ttk.Button(action_frame, text="Branch from Here", command=self._new_experiment).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        ttk.Button(action_frame, text=(f"Save Snapshot to Current Branch"), command=self._save_snapshot).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
         self.detached_view_frame = ttk.Frame(self.left_pane)
-        detached_label_frame = ttk.LabelFrame(self.detached_view_frame, text="-- VIEWING A PAST VERSION --", padding=10); detached_label_frame.pack(fill=tk.BOTH, expand=True)
-        self.detached_info_label = ttk.Label(detached_label_frame, text="From experiment:\nSnapshot:", justify=tk.LEFT, font=("Segoe UI", 10, "bold")); self.detached_info_label.pack(anchor=tk.W, pady=5)
+        detached_label_frame = ttk.LabelFrame(self.detached_view_frame, text="-- PAST VERSION LOADED --", padding=10); detached_label_frame.pack(fill=tk.BOTH, expand=True)
+        self.detached_info_label = ttk.Label(detached_label_frame, text="WITHIN EXPERIMENT:\nSnapshot:", justify=tk.LEFT, font=("Segoe UI", 10, "bold")); self.detached_info_label.pack(anchor=tk.W, pady=5)
         ttk.Separator(detached_label_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         ttk.Label(detached_label_frame, text="What do you want to do?", justify=tk.LEFT).pack(anchor=tk.W, pady=5)
         self.restore_button = ttk.Button(detached_label_frame, text="Restore this State as New Snapshot", command=self._restore_state_as_new_snapshot); self.restore_button.pack(fill=tk.X, pady=2)
@@ -197,11 +199,11 @@ class PermutationManager(tk.Tk):
         ttk.Separator(detached_label_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         ttk.Button(detached_label_frame, text="Return to Present", command=self._return_to_current).pack(fill=tk.X, side=tk.BOTTOM, pady=2)
         right_pane = ttk.Frame(main_pane, padding=10); main_pane.add(right_pane, weight=3)
-        hist_frame = ttk.LabelFrame(right_pane, text="History", padding=10); hist_frame.pack(fill=tk.BOTH, expand=True)
+        hist_frame = ttk.LabelFrame(right_pane, text="Snapshots within current experiment", padding=10); hist_frame.pack(fill=tk.BOTH, expand=True)
         self.hist_label = ttk.Label(hist_frame, text="..."); self.hist_label.pack(fill=tk.X)
         self.hist_list = tk.Listbox(hist_frame); self.hist_list.pack(fill=tk.BOTH, expand=True, pady=5)
         hist_action_frame = ttk.Frame(hist_frame); hist_action_frame.pack(fill=tk.X)
-        ttk.Button(hist_action_frame, text="View this Version", command=self._load_historical_version).pack(expand=True, fill=tk.X)
+        ttk.Button(hist_action_frame, text="Load into Selected Snapshot", command=self._load_historical_version).pack(expand=True, fill=tk.X)
         self.status_bar = ttk.Label(self, text="Welcome!", relief=tk.SUNKEN, anchor=tk.W, padding=5); self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
     def _select_project(self):
         path = filedialog.askdirectory(title="Select Your Single Project Folder")
@@ -212,18 +214,18 @@ class PermutationManager(tk.Tk):
         if not branch_res["success"]: self._show_error(branch_res["error"]); return
         self.exp_list.delete(0, tk.END)
         for i, branch in enumerate(branch_res["output"].split('\n')):
-            display_text = f" * {branch}" if branch == self.active_branch else f"   {branch}"
+            display_text = f" <<CURRENTLY LOADED>>: {branch}" if branch == self.active_branch else f"   {branch}"
             self.exp_list.insert(tk.END, display_text)
             if branch == self.active_branch: self.exp_list.itemconfig(i, {'bg':'#e8f0fe'})
         self._update_history_for_branch(self.active_branch)
     def _show_detached_view(self):
         self.main_view_frame.pack_forget(); self.detached_view_frame.pack(fill=tk.BOTH, expand=True)
-        info_text = (f"From experiment: {self.detached_from_branch}\n" f"Snapshot: '{self.detached_commit_info.get('subject', 'N/A')}'")
+        info_text = (f"WITHIN EXPERIMENT: {self.detached_from_branch}\n" f"Loaded snapshot name: '{self.detached_commit_info.get('subject', 'N/A')}'")
         self.detached_info_label.config(text=info_text)
         self.restore_button.config(state=tk.DISABLED if self.is_viewing_latest else tk.NORMAL)
         self._update_history_for_branch(self.detached_from_branch)
     def _update_history_for_branch(self, branch_name):
-        self.hist_label.config(text=f"History for '{branch_name}'")
+        self.hist_label.config(text=f"'{branch_name}'")
         hist_res = self.git_helper.get_history(branch_name)
         self.hist_list.delete(0, tk.END)
         if hist_res["success"]:
@@ -254,7 +256,6 @@ class PermutationManager(tk.Tk):
         if result["success"]: self.update_ui_state()
         else: self._show_error(result["error"])
     def _new_experiment(self): self._create_experiment(start_point=self.active_branch)
-    def _new_experiment_from_detached(self): self._create_experiment(start_point=self.detached_commit_info['hash'])
     def _create_experiment(self, start_point):
         name = simpledialog.askstring("New Experiment", "Enter a name for the new experiment:")
         if not name or " " in name:
@@ -264,7 +265,7 @@ class PermutationManager(tk.Tk):
         if result["success"]: self.update_ui_state()
         else: self._show_error(result["error"])
     def _save_snapshot(self):
-        message = simpledialog.askstring("Save Snapshot", "Enter a short description for the history:")
+        message = simpledialog.askstring(f"Save Snapshot in '{self.active_branch}'", "Enter a short description for the history:")
         if not message: return False
         result = self.git_helper.commit(message)
         if result["success"]: self.update_ui_state(); return True
