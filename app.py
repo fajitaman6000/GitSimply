@@ -5,9 +5,11 @@ import os
 import json
 import platform
 import subprocess
-from git_helper import GitHelper, SESSION_META_DIR
+from git_helper import GitHelper
 
 APP_CONFIG_FILE = "config.json"
+# --- NEW: Define path for persistent session state ---
+SESSION_META_DIR = ".manager_meta"
 SESSION_FILE = "session.json"
 
 class PermutationManager(tk.Tk):
@@ -30,6 +32,7 @@ class PermutationManager(tk.Tk):
             self.main_view_frame.pack_forget()
             self.detached_view_frame.pack_forget()
 
+    # --- NEW: Methods to handle saving and loading session state ---
     def _get_session_path(self):
         if not self.project_root: return None
         return os.path.join(self.project_root, SESSION_META_DIR, SESSION_FILE)
@@ -43,8 +46,10 @@ class PermutationManager(tk.Tk):
                     self.detached_from_branch = session_data.get("detached_from_branch", "")
                     self.detached_commit_info = session_data.get("detached_commit_info", {})
                     self.is_viewing_latest = session_data.get("is_viewing_latest", False)
-            except (json.JSONDecodeError, FileNotFoundError): self._clear_session_state()
-        else: self._clear_session_state(clear_vars=True)
+            except (json.JSONDecodeError, FileNotFoundError):
+                self._clear_session_state() # Clear corrupted session
+        else:
+            self._clear_session_state(clear_vars=True)
 
     def _save_session_state(self):
         path = self._get_session_path()
@@ -55,28 +60,116 @@ class PermutationManager(tk.Tk):
             "detached_commit_info": self.detached_commit_info,
             "is_viewing_latest": self.is_viewing_latest
         }
-        with open(path, "w") as f: json.dump(session_data, f, indent=2)
+        with open(path, "w") as f:
+            json.dump(session_data, f, indent=2)
 
     def _clear_session_state(self, clear_vars=True):
         path = self._get_session_path()
-        if path and os.path.exists(path): os.remove(path)
+        if path and os.path.exists(path):
+            os.remove(path)
         if clear_vars:
-            self.detached_from_branch, self.detached_commit_info, self.is_viewing_latest = "", {}, False
+            self.detached_from_branch = ""
+            self.detached_commit_info = {}
+            self.is_viewing_latest = False
 
-    # --- MODIFIED: Delete button is now fully functional ---
-    def _delete_experiment(self):
-        indices = self.exp_list.curselection()
-        if not indices: return
-        branch_to_delete = self.exp_list.get(indices[0]).strip().lstrip('* ')
-        if not messagebox.askyesno("Confirm Deletion", f"Permanently delete the experiment '{branch_to_delete}'? This cannot be undone."): return
+    def _initialize_project(self, path):
+        self.project_root, self.git_helper = path, GitHelper(path)
+        self.proj_label.config(text=self.project_root)
+        result = self.git_helper.initialize_repo()
+        if not result["success"]: self._show_error(f"Failed to initialize:\n{result['error']}"); return
         
-        result = self.git_helper.delete_branch(branch_to_delete)
+        # --- MODIFIED: Load session state before updating UI ---
+        self._load_session_state()
+        self._save_config()
+        self.update_ui_state()
+
+    # --- MODIFIED: This is now the single source of truth for UI state ---
+    def update_ui_state(self):
+        if not self.git_helper: return
+        state_res = self.git_helper.get_current_state()
+        if not state_res["success"]: self._show_error(state_res["error"]); return
+        
+        self.is_detached = state_res["data"]["is_detached"]
+        if self.is_detached:
+            # If we are detached but have no session info, something is wrong. Force return.
+            if not self.detached_from_branch or not self.detached_commit_info:
+                messagebox.showwarning("Unstable State", "The app was closed in an unusual state. Returning to the 'main' experiment for safety.")
+                self.git_helper.checkout('main')
+                self._clear_session_state()
+                # Rerun the state check
+                self.update_ui_state()
+                return
+            self._show_detached_view()
+        else:
+            # If we are not detached, there should be no session file. Clean it up.
+            self._clear_session_state()
+            self.active_branch = state_res["data"]["current_ref"]
+            self._show_main_view()
+
+    # --- MODIFIED: Saves the session state before checking out ---
+    def _load_historical_version(self):
+        hist_indices = self.hist_list.curselection()
+        if not hist_indices: self._show_error("Please select a version from the history list to view."); return
+        if self._handle_unsaved_changes() == "cancel": return
+        
+        selected_index = hist_indices[0]
+        
+        self.detached_commit_info = self.history[selected_index]
+        self.detached_from_branch = self.active_branch
+        self.is_viewing_latest = (selected_index == 0)
+        
+        # Save state *before* performing the action
+        self._save_session_state()
+        
+        result = self.git_helper.checkout(self.detached_commit_info['hash'])
         if result["success"]:
+            self.update_ui_state()
+        else:
+            self._clear_session_state()
+            self._show_error(result["error"])
+            self.update_ui_state()
+
+    # --- MODIFIED: Clears session state on successful exit from "time machine" ---
+    def _return_to_current(self):
+        result = self.git_helper.checkout(self.detached_from_branch)
+        if result["success"]:
+            self._clear_session_state()
             self.update_ui_state()
         else:
             self._show_error(result["error"])
 
-    # ... All other methods are correct and included for completeness ...
+    def _restore_state_as_new_snapshot(self):
+        confirm_msg = f"This will create a new snapshot on the '{self.detached_from_branch}' experiment that is an exact copy of the version you are viewing. Proceed?"
+        if not messagebox.askyesno("Confirm Restore", confirm_msg): return
+        
+        old_subject = self.detached_commit_info.get('subject', 'an old version')
+        new_commit_message = f"Restored state to: '{old_subject}'"
+        result = self.git_helper.restore_and_commit_past_state(
+            branch_to_restore_on=self.detached_from_branch,
+            old_commit_hash=self.detached_commit_info['hash'],
+            new_commit_message=new_commit_message
+        )
+        if result["success"]:
+            self._clear_session_state() # Clear state on success
+            self.update_ui_state()
+            self.status_bar.config(text="Successfully restored state as a new snapshot.")
+        else:
+            self._show_error(result["error"])
+            self._return_to_current()
+
+    def _new_experiment_from_detached(self):
+        # Create the experiment first
+        self._create_experiment(start_point=self.detached_commit_info['hash'])
+        # If successful, the UI update will handle clearing the detached state
+        # No need to call _clear_session_state() here as update_ui_state will do it.
+
+    # ... All other methods are included for completeness and are correct ...
+    def _load_config(self):
+        try:
+            with open(APP_CONFIG_FILE, "r") as f: self.project_root = json.load(f).get("project_root")
+        except (FileNotFoundError, json.JSONDecodeError): self.project_root = None
+    def _save_config(self):
+        with open(APP_CONFIG_FILE, "w") as f: json.dump({"project_root": self.project_root}, f, indent=2)
     def _create_widgets(self):
         top_frame = ttk.Frame(self, padding=(10, 10, 10, 0)); top_frame.pack(fill=tk.X)
         proj_frame = ttk.LabelFrame(top_frame, text="Project Folder", padding=5); proj_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -110,52 +203,9 @@ class PermutationManager(tk.Tk):
         hist_action_frame = ttk.Frame(hist_frame); hist_action_frame.pack(fill=tk.X)
         ttk.Button(hist_action_frame, text="View this Version", command=self._load_historical_version).pack(expand=True, fill=tk.X)
         self.status_bar = ttk.Label(self, text="Welcome!", relief=tk.SUNKEN, anchor=tk.W, padding=5); self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
-    def _load_config(self):
-        try:
-            with open(APP_CONFIG_FILE, "r") as f: self.project_root = json.load(f).get("project_root")
-        except (FileNotFoundError, json.JSONDecodeError): self.project_root = None
-    def _save_config(self):
-        with open(APP_CONFIG_FILE, "w") as f: json.dump({"project_root": self.project_root}, f, indent=2)
     def _select_project(self):
         path = filedialog.askdirectory(title="Select Your Single Project Folder")
         if path: self._initialize_project(path)
-    def _initialize_project(self, path):
-        self.project_root, self.git_helper = path, GitHelper(path)
-        self.proj_label.config(text=self.project_root)
-        result = self.git_helper.initialize_repo()
-        if not result["success"]: self._show_error(f"Failed to initialize:\n{result['error']}"); return
-        self._load_session_state()
-        self._save_config()
-        self.update_ui_state()
-    def update_ui_state(self):
-        if not self.git_helper: return
-        state_res = self.git_helper.get_current_state()
-        if not state_res["success"]: self._show_error(state_res["error"]); return
-        self.is_detached = state_res["data"]["is_detached"]
-        if self.is_detached:
-            if not self.detached_from_branch or not self.detached_commit_info:
-                messagebox.showwarning("Unstable State", "App was closed in an unusual state. Returning to the 'main' experiment for safety.")
-                self.git_helper.checkout('main')
-                self._clear_session_state()
-                self.update_ui_state()
-                return
-            self._show_detached_view()
-        else:
-            self._clear_session_state()
-            self.active_branch = state_res["data"]["current_ref"]
-            self._show_main_view()
-    def _load_historical_version(self):
-        hist_indices = self.hist_list.curselection()
-        if not hist_indices: self._show_error("Please select a version from the history list to view."); return
-        if self._handle_unsaved_changes() == "cancel": return
-        selected_index = hist_indices[0]
-        self.detached_commit_info = self.history[selected_index]
-        self.detached_from_branch = self.active_branch
-        self.is_viewing_latest = (selected_index == 0)
-        self._save_session_state()
-        result = self.git_helper.checkout(self.detached_commit_info['hash'])
-        if result["success"]: self.update_ui_state()
-        else: self._clear_session_state(); self._show_error(result["error"]); self.update_ui_state()
     def _show_main_view(self):
         self.detached_view_frame.pack_forget(); self.main_view_frame.pack(fill=tk.BOTH, expand=True)
         branch_res = self.git_helper.get_all_branches()
@@ -203,18 +253,6 @@ class PermutationManager(tk.Tk):
         result = self.git_helper.checkout(target_branch)
         if result["success"]: self.update_ui_state()
         else: self._show_error(result["error"])
-    def _return_to_current(self):
-        result = self.git_helper.checkout(self.detached_from_branch)
-        if result["success"]: self._clear_session_state(); self.update_ui_state()
-        else: self._show_error(result["error"])
-    def _restore_state_as_new_snapshot(self):
-        confirm_msg = f"This will create a new snapshot on the '{self.detached_from_branch}' experiment that is an exact copy of the version you are viewing. Proceed?"
-        if not messagebox.askyesno("Confirm Restore", confirm_msg): return
-        old_subject = self.detached_commit_info.get('subject', 'an old version')
-        new_commit_message = f"Restored state to: '{old_subject}'"
-        result = self.git_helper.restore_and_commit_past_state(branch_to_restore_on=self.detached_from_branch, old_commit_hash=self.detached_commit_info['hash'], new_commit_message=new_commit_message)
-        if result["success"]: self._clear_session_state(); self.update_ui_state(); self.status_bar.config(text="Successfully restored state as a new snapshot.")
-        else: self._show_error(result["error"]); self._return_to_current()
     def _new_experiment(self): self._create_experiment(start_point=self.active_branch)
     def _new_experiment_from_detached(self): self._create_experiment(start_point=self.detached_commit_info['hash'])
     def _create_experiment(self, start_point):
@@ -231,4 +269,12 @@ class PermutationManager(tk.Tk):
         result = self.git_helper.commit(message)
         if result["success"]: self.update_ui_state(); return True
         else: self._show_error(result['error']); return False
+    def _delete_experiment(self):
+        indices = self.exp_list.curselection()
+        if not indices: return
+        branch_to_delete = self.exp_list.get(indices[0]).strip().lstrip('* ')
+        if not messagebox.askyesno("Confirm Deletion", f"Permanently delete the experiment '{branch_to_delete}'? This cannot be undone."): return
+        result = self.git_helper.delete_branch(branch_to_delete)
+        if result["success"]: self.update_ui_state()
+        else: self._show_error(result["error"])
     def _show_error(self, message): messagebox.showerror("Error", message)
