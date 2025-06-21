@@ -26,7 +26,6 @@ class GitHelper:
             return {"success": False, "error": error_message}
         except FileNotFoundError: return {"success": False, "error": "Git command not found. Is Git installed?"}
 
-    # --- MODIFIED: Fixes initialization and the "unsaved changes" bug ---
     def initialize_repo(self):
         """
         Initializes a Git repository if one doesn't exist, or ensures an
@@ -41,8 +40,6 @@ class GitHelper:
             self._run_command("config user.name 'PermutationManager'")
             self._run_command("config user.email 'user@permutation.manager'")
 
-        # Ensure .gitignore exists and contains our entry for both new and existing repos.
-        # This prevents session files from polluting git status, fixing the primary bug.
         gitignore_path = os.path.join(self.project_root, ".gitignore")
         entry_to_add = f"\n# Permutation Manager Files\n{SESSION_META_DIR}/\n"
         
@@ -54,24 +51,20 @@ class GitHelper:
                     needs_write = False
         
         if needs_write:
-            with open(gitignore_path, "a") as f: # Use append mode
+            with open(gitignore_path, "a") as f:
                 f.write(entry_to_add)
 
         if is_new_repo:
-            self._run_command("add .gitignore") # Add the gitignore itself first
-            commit_res_gi = self._run_command("commit -m 'Initial commit: Add .gitignore'")
+            self._run_command("add .gitignore")
+            self._run_command("commit -m 'Initial commit: Add .gitignore'")
 
             self._run_command("add .")
-            # Create an initial commit with the actual project state.
             commit_res = self._run_command("commit -m 'Initial Project State'")
             if not commit_res["success"] and "nothing to commit" in commit_res.get("error", ""):
-                # This can happen if the folder is empty except for .gitignore.
-                # The first commit for .gitignore is sufficient.
                 return {"success": True}
             return commit_res
         
         return {"success": True}
-
 
     def get_current_state(self):
         branch_res = self._run_command("rev-parse --abbrev-ref HEAD")
@@ -113,5 +106,13 @@ class GitHelper:
                 parts = line.split(sep)
                 if len(parts) == 3: history.append({"hash": parts[0], "date": parts[1], "subject": parts[2]})
         return {"success": True, "data": history}
+
+    # --- MODIFIED: Now also removes untracked files to fully discard changes ---
     def discard_changes(self):
-        return self._run_command("reset --hard HEAD")
+        """Resets modified files and removes all untracked files and directories."""
+        reset_res = self._run_command("reset --hard HEAD")
+        if not reset_res["success"]:
+            return reset_res
+        # -f is for files, -d is for directories. This is a destructive but necessary operation
+        # to fulfill the user's request to "permanently discard" changes.
+        return self._run_command("clean -fd")
