@@ -95,7 +95,7 @@ class PermutationManager(tk.Tk):
         if self.is_detached:
             # If we are detached but have no session info, something is wrong. Force return.
             if not self.detached_from_branch or not self.detached_commit_info:
-                messagebox.showwarning("Unstable State", "The app was closed in an unusual state. Returning to the 'main' experiment for safety.")
+                messagebox.showwarning("Unstable State", "The app was closed in an unusual state. Returning to the 'main' branch for safety.")
                 self.git_helper.checkout('main')
                 self._clear_session_state()
                 # Rerun the state check
@@ -141,7 +141,7 @@ class PermutationManager(tk.Tk):
             self._show_error(result["error"])
 
     def _restore_state_as_new_snapshot(self):
-        confirm_msg = f"This will create a new snapshot on the '{self.detached_from_branch}' experiment that is an exact copy of the version you are viewing. Proceed?"
+        confirm_msg = f"This will create a new snapshot on the '{self.detached_from_branch}' branch that is an exact copy of the version you are viewing. Proceed?"
         if not messagebox.askyesno("Confirm Restore", confirm_msg): return
         
         old_subject = self.detached_commit_info.get('subject', 'an old version')
@@ -159,9 +159,9 @@ class PermutationManager(tk.Tk):
             self._show_error(result["error"])
             self._return_to_current()
 
-    def _new_experiment_from_detached(self):
-        # Create the experiment first
-        self._create_experiment(start_point=self.detached_commit_info['hash'])
+    def _new_branch_from_detached(self):
+        # Create the branch first
+        self._create_branch(start_point=self.detached_commit_info['hash'])
         # If successful, the UI update will handle clearing the detached state
         # No need to call _clear_session_state() here as update_ui_state will do it.
 
@@ -180,26 +180,26 @@ class PermutationManager(tk.Tk):
         main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL); main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         self.left_pane = ttk.Frame(main_pane, padding=10); main_pane.add(self.left_pane, weight=1)
         self.main_view_frame = ttk.Frame(self.left_pane)
-        exp_frame = ttk.LabelFrame(self.main_view_frame, text="Experiments (Branches)", padding=10); exp_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        exp_frame = ttk.LabelFrame(self.main_view_frame, text="Branches", padding=10); exp_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         self.exp_list = tk.Listbox(exp_frame, exportselection=False, font=("Segoe UI", 10)); self.exp_list.pack(fill=tk.BOTH, expand=True, pady=(0,5))
-        self.exp_list.bind("<<ListboxSelect>>", self._on_experiment_select)
+        self.exp_list.bind("<<ListboxSelect>>", self._on_branch_select)
         exp_action_frame = ttk.Frame(exp_frame); exp_action_frame.pack(fill=tk.X)
-        self.switch_button = ttk.Button(exp_action_frame, text="Load Selected Experiment", command=self._switch_experiment, state=tk.DISABLED); self.switch_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        self.delete_button = ttk.Button(exp_action_frame, text="Delect Selected Experiment", command=self._delete_experiment, state=tk.DISABLED); self.delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
-        action_frame = ttk.Frame(self.main_view_frame); action_frame.pack(fill=tk.X, side=tk.BOTTOM)
-        ttk.Button(action_frame, text="Branch from Here", command=self._new_experiment).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        self.switch_button = ttk.Button(exp_action_frame, text="Load Selected Branch", command=self._switch_branch, state=tk.DISABLED); self.switch_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        self.delete_button = ttk.Button(exp_action_frame, text="Delect Selected Branch", command=self._delete_branch, state=tk.DISABLED); self.delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
+        action_frame = ttk.Frame(self.main_view_frame); action_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(35,0))
+        ttk.Button(action_frame, text="Branch from Current State", command=self._new_branch).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
         ttk.Button(action_frame, text=(f"Save Snapshot to Current Branch"), command=self._save_snapshot).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
         self.detached_view_frame = ttk.Frame(self.left_pane)
         detached_label_frame = ttk.LabelFrame(self.detached_view_frame, text="-- PAST VERSION LOADED --", padding=10); detached_label_frame.pack(fill=tk.BOTH, expand=True)
-        self.detached_info_label = ttk.Label(detached_label_frame, text="WITHIN EXPERIMENT:\nSnapshot:", justify=tk.LEFT, font=("Segoe UI", 10, "bold")); self.detached_info_label.pack(anchor=tk.W, pady=5)
+        self.detached_info_label = ttk.Label(detached_label_frame, text="WITHIN BRANCH:\nSnapshot:", justify=tk.LEFT, font=("Segoe UI", 10, "bold")); self.detached_info_label.pack(anchor=tk.W, pady=5)
         ttk.Separator(detached_label_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         ttk.Label(detached_label_frame, text="What do you want to do?", justify=tk.LEFT).pack(anchor=tk.W, pady=5)
         self.restore_button = ttk.Button(detached_label_frame, text="Restore this State as New Snapshot", command=self._restore_state_as_new_snapshot); self.restore_button.pack(fill=tk.X, pady=2)
-        ttk.Button(detached_label_frame, text="Start New Experiment from Here", command=self._new_experiment_from_detached).pack(fill=tk.X, pady=2)
+        ttk.Button(detached_label_frame, text="Start New Branch from Here", command=self._new_branch_from_detached).pack(fill=tk.X, pady=2)
         ttk.Separator(detached_label_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         ttk.Button(detached_label_frame, text="Return to Present", command=self._return_to_current).pack(fill=tk.X, side=tk.BOTTOM, pady=2)
         right_pane = ttk.Frame(main_pane, padding=10); main_pane.add(right_pane, weight=3)
-        hist_frame = ttk.LabelFrame(right_pane, text="Snapshots within current experiment", padding=10); hist_frame.pack(fill=tk.BOTH, expand=True)
+        hist_frame = ttk.LabelFrame(right_pane, text="Snapshots within current branch", padding=10); hist_frame.pack(fill=tk.BOTH, expand=True)
         self.hist_label = ttk.Label(hist_frame, text="..."); self.hist_label.pack(fill=tk.X)
         self.hist_list = tk.Listbox(hist_frame); self.hist_list.pack(fill=tk.BOTH, expand=True, pady=5)
         hist_action_frame = ttk.Frame(hist_frame); hist_action_frame.pack(fill=tk.X)
@@ -220,7 +220,7 @@ class PermutationManager(tk.Tk):
         self._update_history_for_branch(self.active_branch)
     def _show_detached_view(self):
         self.main_view_frame.pack_forget(); self.detached_view_frame.pack(fill=tk.BOTH, expand=True)
-        info_text = (f"WITHIN EXPERIMENT: {self.detached_from_branch}\n" f"Loaded snapshot name: '{self.detached_commit_info.get('subject', 'N/A')}'")
+        info_text = (f"WITHIN BRANCH: {self.detached_from_branch}\n" f"Loaded snapshot name: '{self.detached_commit_info.get('subject', 'N/A')}'")
         self.detached_info_label.config(text=info_text)
         self.restore_button.config(state=tk.DISABLED if self.is_viewing_latest else tk.NORMAL)
         self._update_history_for_branch(self.detached_from_branch)
@@ -239,7 +239,7 @@ class PermutationManager(tk.Tk):
             if response is True: return "saved" if self._save_snapshot() else "cancel"
             else: self.git_helper.discard_changes(); return "discarded"
         return "clean"
-    def _on_experiment_select(self, event=None):
+    def _on_branch_select(self, event=None):
         indices = self.exp_list.curselection()
         if not indices: self.switch_button.config(state=tk.DISABLED); self.delete_button.config(state=tk.DISABLED); return
         selected_branch = self.exp_list.get(indices[0]).strip().lstrip('* ')
@@ -247,7 +247,7 @@ class PermutationManager(tk.Tk):
         is_main = selected_branch == 'main'
         self.switch_button.config(state=tk.DISABLED if is_active else tk.NORMAL)
         self.delete_button.config(state=tk.DISABLED if is_active or is_main else tk.NORMAL)
-    def _switch_experiment(self):
+    def _switch_branch(self):
         indices = self.exp_list.curselection()
         if not indices: return
         target_branch = self.exp_list.get(indices[0]).strip().lstrip('* ')
@@ -255,9 +255,9 @@ class PermutationManager(tk.Tk):
         result = self.git_helper.checkout(target_branch)
         if result["success"]: self.update_ui_state()
         else: self._show_error(result["error"])
-    def _new_experiment(self): self._create_experiment(start_point=self.active_branch)
-    def _create_experiment(self, start_point):
-        name = simpledialog.askstring("New Experiment", "Enter a name for the new experiment:")
+    def _new_branch(self): self._create_branch(start_point=self.active_branch)
+    def _create_branch(self, start_point):
+        name = simpledialog.askstring("New Branch", "Enter a name for the new branch:")
         if not name or " " in name:
             if name is not None: self._show_error("Invalid name.")
             return
@@ -270,11 +270,11 @@ class PermutationManager(tk.Tk):
         result = self.git_helper.commit(message)
         if result["success"]: self.update_ui_state(); return True
         else: self._show_error(result['error']); return False
-    def _delete_experiment(self):
+    def _delete_branch(self):
         indices = self.exp_list.curselection()
         if not indices: return
         branch_to_delete = self.exp_list.get(indices[0]).strip().lstrip('* ')
-        if not messagebox.askyesno("Confirm Deletion", f"Permanently delete the experiment '{branch_to_delete}'? This cannot be undone."): return
+        if not messagebox.askyesno("Confirm Deletion", f"Permanently delete the branch '{branch_to_delete}'? This cannot be undone."): return
         result = self.git_helper.delete_branch(branch_to_delete)
         if result["success"]: self.update_ui_state()
         else: self._show_error(result["error"])
