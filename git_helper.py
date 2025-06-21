@@ -1,4 +1,4 @@
-# git_helper.py
+# git_helper.py Please give all changes to this script in WHOLE. Do not give snippets. Respond with the script as a whole pasteable unit without comments made to omit parts like "... rest of xyz method remains the same"
 import subprocess
 import os
 import shlex
@@ -38,31 +38,36 @@ class GitHelper:
 
         if is_new_repo:
             self._run_command("init -b main")
-            self._run_command("config user.name 'VibeCoder'")
-            self._run_command("config user.email 'vibecoder@example.com'")
+            self._run_command("config user.name 'PermutationManager'")
+            self._run_command("config user.email 'user@permutation.manager'")
 
         # Ensure .gitignore exists and contains our entry for both new and existing repos.
         # This prevents session files from polluting git status, fixing the primary bug.
         gitignore_path = os.path.join(self.project_root, ".gitignore")
         entry_to_add = f"\n# Permutation Manager Files\n{SESSION_META_DIR}/\n"
         
-        if not os.path.exists(gitignore_path):
-            with open(gitignore_path, "w") as f:
-                f.write(entry_to_add.lstrip())
-        else:
-            with open(gitignore_path, "r+") as f:
+        needs_write = True
+        if os.path.exists(gitignore_path):
+            with open(gitignore_path, "r") as f:
                 content = f.read()
-                if SESSION_META_DIR not in content:
-                    f.write(entry_to_add) # Appends to the end
+                if SESSION_META_DIR in content:
+                    needs_write = False
+        
+        if needs_write:
+            with open(gitignore_path, "a") as f: # Use append mode
+                f.write(entry_to_add)
 
         if is_new_repo:
+            self._run_command("add .gitignore") # Add the gitignore itself first
+            commit_res_gi = self._run_command("commit -m 'Initial commit: Add .gitignore'")
+
             self._run_command("add .")
             # Create an initial commit with the actual project state.
-            commit_res = self._run_command("commit -m 'Initial Commit'")
+            commit_res = self._run_command("commit -m 'Initial Project State'")
             if not commit_res["success"] and "nothing to commit" in commit_res.get("error", ""):
-                # This can happen if the folder is empty. Create an empty commit
-                # so that git log and other commands work correctly from the start.
-                return self._run_command("commit --allow-empty -m 'Initial Commit'")
+                # This can happen if the folder is empty except for .gitignore.
+                # The first commit for .gitignore is sufficient.
+                return {"success": True}
             return commit_res
         
         return {"success": True}
@@ -78,22 +83,16 @@ class GitHelper:
         self._run_command("add .")
         return self._run_command(f"commit -m {shlex.quote(message)}")
 
-    # --- MODIFIED: Accepts a commit message to align with its usage in app.py ---
     def restore_and_commit_past_state(self, branch_to_restore_on, old_commit_hash, new_commit_message):
         """Checks out a branch, overwrites its files with an old state, and commits it."""
-        # 1. Ensure we are on the correct branch.
         checkout_res = self.checkout(branch_to_restore_on)
         if not checkout_res["success"]: return checkout_res
 
-        # 2. Overwrite working directory files with the state from the old commit.
-        # The '-- .' is crucial: it applies the changes without moving the HEAD.
         restore_res = self._run_command(f"checkout {shlex.quote(old_commit_hash)} -- .")
         if not restore_res["success"]: return restore_res
 
-        # 3. Commit this as a new state.
         return self.commit(new_commit_message)
 
-    # ... All other methods are unchanged and correct ...
     def get_all_branches(self):
         return self._run_command("branch --format='%(refname:short)'")
     def has_changes(self):
