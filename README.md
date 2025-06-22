@@ -1,3 +1,5 @@
+![Image](https://github.com/user-attachments/assets/c10221a7-5ddb-40c7-810d-26d1debc2009)
+
 GitSimply is a lightweight, workflow-centric Git GUI built in Tkinter, designed for the solo developer, creative coder, or researcher.
 
 Its core philosophy is to abstract away Git's complex command-line syntax and focus entirely on a simple, intuitive "snapshot and experiment" workflow. All work is done within a single project folder, which the tool manages seamlessly for IDEs like VSCode.
