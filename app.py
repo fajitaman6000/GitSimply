@@ -13,7 +13,7 @@ SESSION_FILE = "session.json"
 class PermutationManager(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Permutation Manager")
+        self.title("GitSimply")
         self.geometry("1100x550")
 
         self.project_root, self.git_helper, self.active_branch = None, None, ""
