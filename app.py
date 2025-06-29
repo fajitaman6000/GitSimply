@@ -93,7 +93,7 @@ class PermutationManager(tk.Tk):
             # detached HEAD, but the app doesn't have session info (e.g., after a crash).
             if not self.detached_from_branch or not self.detached_commit_info:
                 if self.git_helper.has_changes():
-                    # If there are changes, we must guide the user to save them.
+                    # --- FIX: Improved crash recovery workflow ---
                     msg = ("The app was closed unexpectedly while you were viewing a past version, and you have unsaved work.\n\n"
                            "To protect your work, you must save it to a new branch.\n\n"
                            "Please enter a name for this new 'recovery' branch.")
@@ -107,7 +107,16 @@ class PermutationManager(tk.Tk):
                     branch_name = self._prompt_for_new_branch_name("Recover Unsaved Work", msg)
 
                     if not branch_name:
-                        messagebox.showerror("Action Canceled", "Your work cannot be recovered without creating a new branch. The application will remain in its current state. Please restart the app and create a branch to save your changes.", parent=self)
+                        discard_msg = ("To protect your project, you must either save your unsaved work to a new branch or discard it.\n\n"
+                                       "If you choose 'OK', the changes from your last session will be PERMANENTLY DISCARDED and you will be returned to the 'main' branch.")
+                        if messagebox.askokcancel("Action Required", discard_msg, icon='warning', parent=self):
+                            self.git_helper.discard_changes()
+                            self.git_helper.checkout('main')
+                            self._clear_session_state()
+                            self.update_ui_state()
+                        else:
+                            messagebox.showerror("Exiting", "The application cannot continue in this unstable state. Please restart and save your work to a new branch.", parent=self)
+                            self.destroy()
                         return
 
                     # Create a new branch from the detached HEAD position.
@@ -156,8 +165,6 @@ class PermutationManager(tk.Tk):
 
         self.detached_commit_info = self.history[selected_index]
         
-        # --- FIX: Only set the 'detached_from_branch' if we are currently on a branch. ---
-        # If we are already detached, we must preserve the original branch we came from.
         if not self.is_detached:
             self.detached_from_branch = self.active_branch
 
@@ -341,7 +348,6 @@ class PermutationManager(tk.Tk):
                     if i == 0:
                         is_current_snapshot = True
                 
-                # --- FIX: Apply highlight tag exclusively to prevent color override ---
                 tags_to_apply = []
                 if is_current_snapshot:
                     tags_to_apply.append('current_snapshot')
@@ -457,10 +463,45 @@ class PermutationManager(tk.Tk):
         if not branch_to_delete or branch_to_delete == self.active_branch or branch_to_delete == 'main':
             return
         
-        if not messagebox.askyesno("Confirm Deletion", f"Permanently delete the branch '{branch_to_delete}'? This cannot be undone.", parent=self): return
+        # --- FIX: Smarter branch deletion with better warnings ---
+        is_merged_res = self.git_helper.is_branch_merged_into_any_other(branch_to_delete)
+        if not is_merged_res["success"]:
+            self._show_error(f"Could not determine if branch is safe to delete.\n{is_merged_res['error']}")
+            return
+
+        if not is_merged_res["is_merged"]:
+            warning_msg = (f"WARNING: The branch '{branch_to_delete}' contains work that does NOT appear in any other branch.\n\n"
+                           f"Deleting it will likely cause PERMANENT DATA LOSS.\n\n"
+                           f"Are you absolutely sure you want to delete this branch?")
+            if not messagebox.askyesno("Potential Data Loss", warning_msg, icon='warning', parent=self):
+                return
+        else:
+            if not messagebox.askyesno("Confirm Deletion", f"Permanently delete the branch '{branch_to_delete}'? This cannot be undone.", parent=self):
+                return
+        
         result = self.git_helper.delete_branch(branch_to_delete)
-        if result["success"]: self.update_ui_state()
-        else: self._show_error(result["error"])
+        if result["success"]: 
+            self.update_ui_state()
+        else: 
+            self._show_error(result["error"])
         
     def _show_error(self, message):
-        messagebox.showerror("Error", message, parent=self)
+        # --- FIX: Translate cryptic errors into user-friendly messages ---
+        simple_message = message
+        
+        # Use info box for non-critical "errors"
+        if "nothing to commit, working tree clean" in message:
+            messagebox.showinfo("No Changes", "There are no changes to save in the current branch.", parent=self)
+            return
+
+        # Translate critical errors
+        if ".git/index.lock" in message:
+            simple_message = "The application seems to be busy or was closed improperly.\n\nPlease wait a moment and try again. If the problem continues, restarting your computer may help."
+        elif "did not match any file(s) known to git" in message:
+            simple_message = "The file or state you are trying to restore could not be found. It may have been part of a deleted branch or there was an error reading the project history."
+        elif "is not a commit and a branch" in message and "cannot be created" in message:
+            simple_message = "The name you chose for the branch is invalid. Please avoid special characters and spaces."
+        elif "A branch named" in message and "already exists" in message:
+            simple_message = "A branch with that name already exists. Please choose a different name."
+
+        messagebox.showerror("Error", simple_message, parent=self)

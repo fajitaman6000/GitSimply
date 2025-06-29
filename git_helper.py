@@ -3,7 +3,6 @@ import subprocess
 import os
 import shlex
 
-# --- NEW: Shared constant for the metadata directory ---
 SESSION_META_DIR = ".manager_meta"
 
 class GitHelper:
@@ -85,6 +84,38 @@ class GitHelper:
         if not restore_res["success"]: return restore_res
 
         return self.commit(new_commit_message)
+    
+    def is_branch_merged_into_any_other(self, branch_to_check):
+        """Checks if a branch's history is contained in any other branch."""
+        all_branches_res = self.get_all_branches()
+        if not all_branches_res["success"]:
+            return {"success": False, "error": all_branches_res["error"]}
+        
+        all_branches = all_branches_res["output"].split('\n')
+        other_branches = [b for b in all_branches if b != branch_to_check]
+
+        if not other_branches:
+            # If there are no other branches, it can't be merged into them.
+            return {"success": True, "is_merged": False}
+
+        # Check if `branch_to_check` is an ancestor of any other branch.
+        for other_branch in other_branches:
+            # Get list of branches that are fully merged into `other_branch`.
+            merged_list_res = self._run_command(f"branch --merged {shlex.quote(other_branch)}")
+            if not merged_list_res["success"]:
+                # If we can't check, assume the worst to be safe.
+                return {"success": False, "error": f"Failed to check merge status against branch '{other_branch}'."}
+            
+            # The output contains branch names, prefixed with '*' if it's the current one.
+            merged_branches = [b.strip().replace('* ', '') for b in merged_list_res["output"].split('\n')]
+            
+            if branch_to_check in merged_branches:
+                # We found one! Its work is contained elsewhere, so it's safe to delete.
+                return {"success": True, "is_merged": True}
+        
+        # We looped through all other branches and none contained this one's work.
+        return {"success": True, "is_merged": False}
+
 
     def get_all_branches(self):
         return self._run_command("branch --format='%(refname:short)'")
