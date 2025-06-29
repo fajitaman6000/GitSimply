@@ -6,6 +6,17 @@ from app import PermutationManager
 from tkinter import messagebox
 import os
 import signal
+import platform
+
+def get_app_config_dir():
+    """Gets the application-specific config directory path."""
+    if platform.system() == "Windows":
+        app_data = os.getenv('APPDATA', os.path.expanduser("~"))
+        return os.path.join(app_data, "GitSimply")
+    elif platform.system() == "Darwin": # macOS
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "GitSimply")
+    else: # Linux and other UNIX-like
+        return os.path.join(os.path.expanduser("~"), ".config", "gitsimply")
 
 if __name__ == "__main__":
     try:
@@ -19,10 +30,13 @@ if __name__ == "__main__":
         print("---------------------------------")
         
         # Create a user-friendly message and a detailed log
-        error_log_path = "gitsimply_crash.log"
         full_traceback = "".join(traceback.format_exc())
         
         try:
+            app_dir = get_app_config_dir()
+            os.makedirs(app_dir, exist_ok=True)
+            error_log_path = os.path.join(app_dir, "gitsimply_crash.log")
+            
             with open(error_log_path, "w", encoding='utf-8') as f:
                 f.write(full_traceback)
             

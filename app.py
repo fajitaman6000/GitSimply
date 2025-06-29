@@ -9,7 +9,18 @@ import re
 import sys
 from git_helper import GitHelper, SESSION_META_DIR
 
-APP_CONFIG_FILE = "config.json"
+def get_app_config_dir():
+    """Gets the application-specific config directory path."""
+    if platform.system() == "Windows":
+        app_data = os.getenv('APPDATA', os.path.expanduser("~"))
+        return os.path.join(app_data, "GitSimply")
+    elif platform.system() == "Darwin": # macOS
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "GitSimply")
+    else: # Linux and other UNIX-like
+        return os.path.join(os.path.expanduser("~"), ".config", "gitsimply")
+
+APP_CONFIG_DIR = get_app_config_dir()
+APP_CONFIG_FILE = os.path.join(APP_CONFIG_DIR, "config.json")
 SESSION_FILE = "session.json"
 
 def resource_path(relative_path):
@@ -278,6 +289,7 @@ class PermutationManager(tk.Tk):
         except (FileNotFoundError, json.JSONDecodeError): self.project_root = None
 
     def _save_config(self):
+        os.makedirs(os.path.dirname(APP_CONFIG_FILE), exist_ok=True)
         with open(APP_CONFIG_FILE, "w") as f: json.dump({"project_root": self.project_root}, f, indent=2)
 
     def _create_widgets(self):
