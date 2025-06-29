@@ -88,7 +88,6 @@ Thumbs.db
                     needs_write = False
         
         if needs_write:
-            # --- FIX: Changed mode from "a" to "a+" to allow reading ---
             with open(gitignore_path, "a+", encoding='utf-8') as f:
                 if os.path.getsize(gitignore_path) > 0:
                     f.seek(0, os.SEEK_END)
@@ -97,15 +96,20 @@ Thumbs.db
                         f.write('\n\n')
                 f.write(gitignore_block.strip() + "\n")
 
+            # After updating .gitignore, we must stage and commit it.
+            self._run_command("add .gitignore")
+            commit_msg = "Initial commit: Add .gitignore for GitSimply" if is_new_repo else "Update .gitignore for GitSimply"
+            commit_res = self._run_command(f"commit -m {shlex.quote(commit_msg)}")
+            
+            # It's okay if this commit fails with "nothing to commit". Any other error should be reported.
+            if not commit_res["success"] and "nothing to commit" not in commit_res.get("error", ""):
+                return commit_res
 
         if is_new_repo:
-            self._run_command("add .gitignore")
-            self._run_command("commit -m 'Initial commit: Add .gitignore for GitSimply'")
-
-            # Now, add all other files that might exist
+            # We already committed .gitignore. Now, add all other files that might exist.
             self._run_command("add .")
             commit_res = self._run_command("commit -m 'Initial Project State'")
-            # It's not an error if there were no other files to commit
+            # It's not an error if there were no other files to commit.
             if not commit_res["success"] and "nothing to commit" in commit_res.get("error", ""):
                 return {"success": True}
             return commit_res

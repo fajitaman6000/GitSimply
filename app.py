@@ -108,9 +108,9 @@ class PermutationManager(tk.Tk):
 
         has_changes = self.git_helper.has_changes()
         if has_changes:
-            self.unsaved_changes_label.pack(fill=tk.X, pady=(2, 5))
+            self.unsaved_changes_frame.pack(fill=tk.X, pady=(2, 5))
         else:
-            self.unsaved_changes_label.pack_forget()
+            self.unsaved_changes_frame.pack_forget()
 
         self.is_detached = state_res["data"]["is_detached"]
         if self.is_detached:
@@ -273,6 +273,7 @@ class PermutationManager(tk.Tk):
         ttk.Button(self.welcome_frame, text="Select Project Folder", command=self._select_project, style="Accent.TButton").pack(pady=10)
         self.style = ttk.Style(self)
         self.style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"))
+        self.style.configure("Danger.TButton", foreground="red")
 
         # --- Main UI ---
         self.top_frame = ttk.Frame(self, padding=(10, 10, 10, 0));
@@ -309,7 +310,14 @@ class PermutationManager(tk.Tk):
         right_pane = ttk.Frame(self.main_pane, padding=10); self.main_pane.add(right_pane, weight=3)
         hist_frame = ttk.LabelFrame(right_pane, text="Snapshots within current branch", padding=10); hist_frame.pack(fill=tk.BOTH, expand=True)
         self.hist_label = ttk.Label(hist_frame, text="..."); self.hist_label.pack(fill=tk.X)
-        self.unsaved_changes_label = ttk.Label(hist_frame, text="You have unsaved changes.", foreground="red", font=("Segoe UI", 9, "bold"))
+
+        # Frame for unsaved changes indicator and discard button
+        self.unsaved_changes_frame = ttk.Frame(hist_frame)
+        self.unsaved_changes_label = ttk.Label(self.unsaved_changes_frame, text="You have unsaved changes.", foreground="red", font=("Segoe UI", 9, "bold"))
+        self.unsaved_changes_label.pack(side=tk.LEFT, padx=(0, 10))
+        self.discard_button = ttk.Button(self.unsaved_changes_frame, text="Discard All Changes", command=self._discard_changes, style="Danger.TButton")
+        self.discard_button.pack(side=tk.LEFT)
+
         hist_tree_container = ttk.Frame(hist_frame)
         hist_tree_container.pack(fill=tk.BOTH, expand=True, pady=5)
         self.hist_list = ttk.Treeview(hist_tree_container, columns=('date', 'subject'), show='headings', selectmode='browse')
@@ -353,8 +361,7 @@ class PermutationManager(tk.Tk):
             display_text = f" << CURRENTLY LOADED>>: {branch}" if is_active else f"   {branch}"
             self.exp_list.insert(tk.END, display_text)
             if is_active:
-                # --- FIX: Removed invalid 'font' option for itemconfig ---
-                self.exp_list.itemconfig(i, {'bg':'#e0e8f0'})
+                self.exp_list.itemconfig(i, bg='#e0e8f0')
         self._update_history_for_branch(self.active_branch)
         self._on_branch_select()
 
@@ -560,6 +567,20 @@ class PermutationManager(tk.Tk):
             self.update_ui_state()
         else: 
             self._show_error(result["error"])
+
+    def _discard_changes(self):
+        confirm_msg = (
+            "Are you sure you want to permanently discard all unsaved changes?\n\n"
+            "This will revert all modified files AND delete any new, untracked files you have created since your last snapshot.\n\n"
+            "This action CANNOT be undone."
+        )
+        if messagebox.askyesno("Confirm Discard Changes", confirm_msg, icon='warning', parent=self):
+            result = self.git_helper.discard_changes()
+            if result["success"]:
+                self.status_bar.config(text="All unsaved changes have been discarded.")
+                self.update_ui_state()
+            else:
+                self._show_error(f"Failed to discard changes:\n{result['error']}")
         
     def _show_error(self, message):
         simple_message = message
