@@ -1,4 +1,5 @@
 # git_helper.py Please give all changes to this script in WHOLE. Do not give snippets. Respond with the script as a whole pasteable unit without comments made to omit parts like "... rest of xyz method remains the same"
+# IF THIS FILE IS UNCHANGED **DO NOT RETURN IT**
 import subprocess
 import os
 import shlex

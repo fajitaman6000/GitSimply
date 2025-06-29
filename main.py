@@ -1,5 +1,6 @@
 # main.py Please give all changes to this script in WHOLE. Do not give snippets. Respond with the script as a whole pasteable unit without comments made to omit parts like "... rest of xyz method remains the same"
 # AGAIN, THIS SCRIPT SHOULD BE DELIVERED BACK TO USER WITHOUT ANY OMISSION EXCEPT LINES WHICH ARE INTENTIONALLY DELETED
+# IF THIS FILE IS UNCHANGED **DO NOT RETURN IT**
 import traceback
 from app import PermutationManager
 from tkinter import messagebox

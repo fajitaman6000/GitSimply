@@ -6,15 +6,31 @@ import json
 import platform
 import subprocess
 import re
+import sys
 from git_helper import GitHelper, SESSION_META_DIR
 
 APP_CONFIG_FILE = "config.json"
 SESSION_FILE = "session.json"
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 class PermutationManager(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("GitSimply")
+        
+        try:
+            self.iconbitmap(resource_path('gitsimply.ico'))
+        except tk.TclError:
+            print("Warning: 'gitsimply.ico' not found. The application will run without a custom icon.")
+
         self.geometry("1100x550")
         self.minsize(900, 500)
 
@@ -279,6 +295,7 @@ class PermutationManager(tk.Tk):
         self.top_frame = ttk.Frame(self, padding=(10, 10, 10, 0));
         proj_frame = ttk.LabelFrame(self.top_frame, text="Project Folder", padding=5); proj_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.proj_label = ttk.Label(proj_frame, text="No project selected.", anchor=tk.W); self.proj_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        ttk.Button(proj_frame, text="Open Project Folder", command=self._open_project_folder).pack(side=tk.RIGHT, padx=(0, 5))
         ttk.Button(proj_frame, text="Change", command=self._select_project).pack(side=tk.RIGHT)
         self.main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         self.left_pane = ttk.Frame(self.main_pane, padding=10); self.main_pane.add(self.left_pane, weight=1)
@@ -349,6 +366,21 @@ class PermutationManager(tk.Tk):
     def _select_project(self):
         path = filedialog.askdirectory(title="Select Your Single Project Folder", parent=self)
         if path: self._initialize_project(path)
+
+    def _open_project_folder(self):
+        if not self.project_root or not os.path.isdir(self.project_root):
+            self._show_error("No project folder is currently selected or the path is invalid.")
+            return
+
+        try:
+            if platform.system() == "Windows":
+                os.startfile(self.project_root)
+            elif platform.system() == "Darwin": # macOS
+                subprocess.run(["open", self.project_root], check=True)
+            else: # Linux and other UNIX-like
+                subprocess.run(["xdg-open", self.project_root], check=True)
+        except Exception as e:
+            self._show_error(f"Could not open the project folder.\n\nError: {e}")
 
     def _show_main_view(self):
         self.detached_view_frame.pack_forget(); self.main_view_frame.pack(fill=tk.BOTH, expand=True)
