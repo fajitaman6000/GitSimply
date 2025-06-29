@@ -19,7 +19,7 @@ class PermutationManager(tk.Tk):
         self.project_root, self.git_helper, self.active_branch = None, None, ""
         self.is_detached, self.detached_from_branch = False, ""
         self.detached_commit_info, self.is_viewing_latest = {}, False
-        self.history = []
+        self.history, self.current_head_hash = [], None
 
         self._load_config()
         self._create_widgets()
@@ -87,23 +87,24 @@ class PermutationManager(tk.Tk):
         state_res = self.git_helper.get_current_state()
         if not state_res["success"]: self._show_error(state_res["error"]); return
 
+        hash_res = self.git_helper.get_current_commit_hash()
+        if not hash_res["success"]: self._show_error(hash_res["error"]); return
+        self.current_head_hash = hash_res["output"]
+
+        has_changes = self.git_helper.has_changes()
+        if has_changes:
+            self.unsaved_changes_label.pack(fill=tk.X, pady=(2, 5))
+        else:
+            self.unsaved_changes_label.pack_forget()
+
         self.is_detached = state_res["data"]["is_detached"]
         if self.is_detached:
-            # This is the "unusual state" recovery logic. It triggers if we are in
-            # detached HEAD, but the app doesn't have session info (e.g., after a crash).
             if not self.detached_from_branch or not self.detached_commit_info:
-                if self.git_helper.has_changes():
-                    # --- FIX: Improved crash recovery workflow ---
+                if has_changes:
                     msg = ("The app was closed unexpectedly while you were viewing a past version, and you have unsaved work.\n\n"
                            "To protect your work, you must save it to a new branch.\n\n"
                            "Please enter a name for this new 'recovery' branch.")
                     
-                    current_hash_res = self.git_helper.get_current_commit_hash()
-                    if not current_hash_res['success']:
-                        self._show_error(f"FATAL: Could not read the current project state to recover your work. Please resolve manually.\n{current_hash_res['error']}")
-                        return
-                    current_hash = current_hash_res['output']
-
                     branch_name = self._prompt_for_new_branch_name("Recover Unsaved Work", msg)
 
                     if not branch_name:
@@ -119,20 +120,17 @@ class PermutationManager(tk.Tk):
                             self.destroy()
                         return
 
-                    # Create a new branch from the detached HEAD position and check out to it.
-                    result = self.git_helper.create_branch(branch_name, start_point=current_hash)
+                    result = self.git_helper.create_branch(branch_name, start_point=self.current_head_hash)
                     if not result['success']:
                         self._show_error(f"Failed to create recovery branch '{branch_name}':\n{result['error']}")
                         return
                     
-                    # Commit the existing changes to the new branch.
                     commit_res = self.git_helper.commit("Recovered unsaved work from unexpected shutdown")
                     if not commit_res['success']:
                         self._show_error(f"Created recovery branch '{branch_name}' but failed to commit the snapshot.\nYour changes are still present but are uncommitted.\n\nError: {commit_res['error']}")
                     
                     messagebox.showinfo("Work Saved", f"Your unsaved work has been safely stored in a new branch named '{branch_name}'. The app will now load this new branch.", parent=self)
                 else:
-                    # No changes, so it's safe to go to main.
                     messagebox.showwarning("Unstable State", "The app was closed in an unusual state with no unsaved changes. Returning to the 'main' branch for safety.", parent=self)
                     self.git_helper.checkout('main')
 
@@ -147,16 +145,17 @@ class PermutationManager(tk.Tk):
             self._show_main_view()
 
     def _load_historical_version(self):
-        selected_item = self.hist_list.focus()
-        if not selected_item:
+        selected_items = self.hist_list.selection()
+        if not selected_items:
             self._show_error("Please select a version from the history list to view.")
             return
+        selected_item = selected_items[0]
 
         unsaved_status = self._handle_unsaved_changes()
         if unsaved_status in ["cancel", "branch_created"]:
             return
 
-        all_items = self.hist_list.get_children()
+        all_items = self.hist_list.get_children('')
         try:
             selected_index = all_items.index(selected_item)
         except ValueError:
@@ -279,6 +278,7 @@ class PermutationManager(tk.Tk):
         right_pane = ttk.Frame(main_pane, padding=10); main_pane.add(right_pane, weight=3)
         hist_frame = ttk.LabelFrame(right_pane, text="Snapshots within current branch", padding=10); hist_frame.pack(fill=tk.BOTH, expand=True)
         self.hist_label = ttk.Label(hist_frame, text="..."); self.hist_label.pack(fill=tk.X)
+        self.unsaved_changes_label = ttk.Label(hist_frame, text="You have unsaved changes.", foreground="red", font=("Segoe UI", 9, "bold"))
         hist_tree_container = ttk.Frame(hist_frame)
         hist_tree_container.pack(fill=tk.BOTH, expand=True, pady=5)
         self.hist_list = ttk.Treeview(hist_tree_container, columns=('date', 'subject'), show='headings', selectmode='browse')
@@ -286,6 +286,7 @@ class PermutationManager(tk.Tk):
         self.hist_list.heading('subject', text='Snapshot Description')
         self.hist_list.column('date', width=160, stretch=tk.NO, anchor=tk.W)
         self.hist_list.column('subject', stretch=tk.YES, anchor=tk.W)
+        self.hist_list.bind("<<TreeviewSelect>>", self._on_history_select)
         scrollbar = ttk.Scrollbar(hist_tree_container, orient="vertical", command=self.hist_list.yview)
         self.hist_list.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -295,7 +296,8 @@ class PermutationManager(tk.Tk):
         self.hist_list.tag_configure('current_snapshot', background="#E4FFDD", font=('Segoe UI', 10, 'bold'))
         
         hist_action_frame = ttk.Frame(hist_frame); hist_action_frame.pack(fill=tk.X)
-        ttk.Button(hist_action_frame, text="Enter Selected Snapshot", command=self._load_historical_version).pack(expand=True, fill=tk.X)
+        self.history_action_button = ttk.Button(hist_action_frame, text="Enter Selected Snapshot", command=self._load_historical_version)
+        self.history_action_button.pack(expand=True, fill=tk.X)
         self.status_bar = ttk.Label(self, text="Welcome!", relief=tk.SUNKEN, anchor=tk.W, padding=5); self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def _get_selected_branch_name(self):
@@ -358,6 +360,37 @@ class PermutationManager(tk.Tk):
         else:
             self.history = []
             self._show_error(hist_res["error"])
+        self._on_history_select()
+
+    def _on_history_select(self, event=None):
+        if not self.history_action_button.winfo_exists(): return
+        
+        selected_items = self.hist_list.selection()
+        if not selected_items:
+            self.history_action_button.config(state=tk.DISABLED)
+            return
+        
+        selected_item = selected_items[0]
+        all_items = self.hist_list.get_children('')
+        try:
+            selected_index = all_items.index(selected_item)
+            selected_hash = self.history[selected_index]['hash']
+        except (ValueError, IndexError):
+            self.history_action_button.config(state=tk.DISABLED)
+            return
+
+        is_currently_viewed = False
+        if self.is_detached:
+            if selected_hash == self.detached_commit_info.get('hash'):
+                is_currently_viewed = True
+        else:
+            if selected_hash == self.current_head_hash:
+                is_currently_viewed = True
+
+        if is_currently_viewed:
+            self.history_action_button.config(state=tk.DISABLED)
+        else:
+            self.history_action_button.config(state=tk.NORMAL)
     
     def _handle_unsaved_changes(self):
         if self.git_helper.has_changes():
@@ -437,7 +470,7 @@ class PermutationManager(tk.Tk):
             return
         
         if self.git_helper.has_changes():
-            commit_message = simpledialog.askstring("Save Initial Snapshot", f"You have uncommitted changes.\n\nEnter a description to save them as the first snapshot on your new branch from here '{branch_name}':", parent=self)
+            commit_message = simpledialog.askstring("Save Initial Snapshot", f"You have uncommitted changes.\n\nEnter a description to save them as the first snapshot on the new branch '{branch_name}':", parent=self)
             if commit_message:
                 commit_res = self.git_helper.commit(commit_message)
                 if not commit_res["success"]:
@@ -463,7 +496,6 @@ class PermutationManager(tk.Tk):
         if not branch_to_delete or branch_to_delete == self.active_branch or branch_to_delete == 'main':
             return
         
-        # --- FIX: Smarter branch deletion with better warnings ---
         is_merged_res = self.git_helper.is_branch_merged_into_any_other(branch_to_delete)
         if not is_merged_res["success"]:
             self._show_error(f"Could not determine if branch is safe to delete.\n{is_merged_res['error']}")
@@ -486,15 +518,12 @@ class PermutationManager(tk.Tk):
             self._show_error(result["error"])
         
     def _show_error(self, message):
-        # --- FIX: Translate cryptic errors into user-friendly messages ---
         simple_message = message
         
-        # Use info box for non-critical "errors"
         if "nothing to commit, working tree clean" in message:
             messagebox.showinfo("No Changes", "There are no changes to save in the current branch.", parent=self)
             return
 
-        # Translate critical errors
         if ".git/index.lock" in message:
             simple_message = "The application seems to be busy or was closed improperly.\n\nPlease wait a moment and try again. If the problem continues, restarting your computer may help."
         elif "did not match any file(s) known to git" in message:

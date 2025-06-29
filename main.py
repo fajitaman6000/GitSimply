@@ -3,18 +3,38 @@
 import traceback
 from app import PermutationManager
 from tkinter import messagebox
+import os
+import signal
 
 if __name__ == "__main__":
     try:
         app = PermutationManager()
+        signal.signal(signal.SIGINT, lambda sig, frame: app.destroy())
         app.mainloop()
     except Exception as e:
-        # --- FIX: Print the full traceback to the console first ---
+        # --- FIX: Log the full traceback to a file and show a user-friendly message ---
         print("--- A CRITICAL ERROR OCCURRED ---")
         traceback.print_exc()
         print("---------------------------------")
         
-        # Then, create the message for the GUI dialog
-        error_message = "An unexpected critical error occurred.\n\n"
-        error_message += "".join(traceback.format_exc())
-        messagebox.showerror("Critical Error", error_message)
+        # Create a user-friendly message and a detailed log
+        error_log_path = "gitsimply_crash.log"
+        full_traceback = "".join(traceback.format_exc())
+        
+        try:
+            with open(error_log_path, "w", encoding='utf-8') as f:
+                f.write(full_traceback)
+            
+            user_message = (
+                "The application has encountered a critical error and needs to close.\n\n"
+                "A detailed error log has been saved to:\n"
+                f"{os.path.abspath(error_log_path)}\n\n"
+                "Please provide this file if you are reporting the issue."
+            )
+        except Exception: # In case we can't even write the log file
+            user_message = (
+                "The application has encountered a critical error and cannot continue.\n\n"
+                "The error details could not be saved to a log file.\n\n"
+                f"Error: {e}"
+            )
+        messagebox.showerror("Critical Error", user_message)

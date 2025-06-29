@@ -29,7 +29,7 @@ class GitHelper:
         """
         Initializes a Git repository if one doesn't exist, or ensures an
         existing one is configured correctly for this app.
-        - Creates a .gitignore to exclude manager-specific files.
+        - Creates a comprehensive .gitignore to exclude common and app-specific files.
         - Creates an initial commit with the project's current state.
         """
         is_new_repo = not os.path.exists(os.path.join(self.project_root, ".git"))
@@ -40,19 +40,52 @@ class GitHelper:
             self._run_command("config user.name 'GitSimply'")
             self._run_command("config user.email 'user@gitsimply.local'")
 
+        # --- FIX: Create a comprehensive, user-friendly .gitignore ---
         gitignore_path = os.path.join(self.project_root, ".gitignore")
-        entry_to_add = f"\n# GitSimply Metadata\n{SESSION_META_DIR}/\n"
+        
+        # Define the block of text we want to ensure is in the gitignore.
+        # The header acts as a unique identifier for our block.
+        gitignore_block = f"""
+# --- GitSimply Managed ---
+# These entries are automatically managed by GitSimply to ignore app files,
+# caches, and other common files that should not be versioned.
+
+# Application-specific
+{SESSION_META_DIR}/
+config.json
+gitsimply_crash.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+# --- End GitSimply Managed ---
+"""
         
         needs_write = True
         if os.path.exists(gitignore_path):
-            with open(gitignore_path, "r") as f:
+            with open(gitignore_path, "r", encoding='utf-8') as f:
                 content = f.read()
-                if SESSION_META_DIR in content:
+                # Check for our unique header to see if our block is already there.
+                if "# --- GitSimply Managed ---" in content:
                     needs_write = False
         
         if needs_write:
-            with open(gitignore_path, "a") as f:
-                f.write(entry_to_add)
+            with open(gitignore_path, "a", encoding='utf-8') as f:
+                # Add a newline before our block if the file is not empty and doesn't end with one.
+                if os.path.getsize(gitignore_path) > 0:
+                    f.seek(0, os.SEEK_END)
+                    f.seek(f.tell() - 1, os.SEEK_SET)
+                    if f.read(1) != '\n':
+                        f.write('\n')
+                f.write(gitignore_block.strip() + "\n")
+
 
         if is_new_repo:
             self._run_command("add .gitignore")
@@ -142,7 +175,7 @@ class GitHelper:
             for line in result["output"].split('\n'):
                 parts = line.split(sep)
                 if len(parts) == 3: history.append({"hash": parts[0], "date": parts[1], "subject": parts[2]})
-        # Invert history to show oldest first, newest last.
+        # Git log provides newest first, which is the order we use.
         return {"success": True, "data": history}
 
     def discard_changes(self):
