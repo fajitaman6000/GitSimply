@@ -5,6 +5,7 @@ import os
 import json
 import platform
 import subprocess
+import re
 from git_helper import GitHelper, SESSION_META_DIR
 
 APP_CONFIG_FILE = "config.json"
@@ -15,6 +16,7 @@ class PermutationManager(tk.Tk):
         super().__init__()
         self.title("GitSimply")
         self.geometry("1100x550")
+        self.minsize(900, 500)
 
         self.project_root, self.git_helper, self.active_branch = None, None, ""
         self.is_detached, self.detached_from_branch = False, ""
@@ -25,10 +27,22 @@ class PermutationManager(tk.Tk):
         self._create_widgets()
 
         if self.project_root and os.path.exists(self.project_root):
+            self._show_main_interface()
             self._initialize_project(self.project_root)
         else:
-            self.main_view_frame.pack_forget()
-            self.detached_view_frame.pack_forget()
+            self._show_welcome_screen()
+
+    def _show_welcome_screen(self):
+        self.main_pane.pack_forget()
+        self.status_bar.pack_forget()
+        self.top_frame.pack_forget()
+        self.welcome_frame.pack(fill=tk.BOTH, expand=True)
+
+    def _show_main_interface(self):
+        self.welcome_frame.pack_forget()
+        self.top_frame.pack(fill=tk.X)
+        self.main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def _get_session_path(self):
         if not self.project_root: return None
@@ -73,10 +87,11 @@ class PermutationManager(tk.Tk):
             self.is_viewing_latest = False
 
     def _initialize_project(self, path):
+        self._show_main_interface()
         self.project_root, self.git_helper = path, GitHelper(path)
         self.proj_label.config(text=self.project_root)
         result = self.git_helper.initialize_repo()
-        if not result["success"]: self._show_error(f"Failed to initialize:\n{result['error']}"); return
+        if not result["success"]: self._show_error(f"Failed to initialize project:\n{result['error']}"); return
 
         self._load_session_state()
         self._save_config()
@@ -250,32 +265,48 @@ class PermutationManager(tk.Tk):
         with open(APP_CONFIG_FILE, "w") as f: json.dump({"project_root": self.project_root}, f, indent=2)
 
     def _create_widgets(self):
-        top_frame = ttk.Frame(self, padding=(10, 10, 10, 0)); top_frame.pack(fill=tk.X)
-        proj_frame = ttk.LabelFrame(top_frame, text="Project Folder", padding=5); proj_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # --- Welcome Screen (initially hidden) ---
+        self.welcome_frame = ttk.Frame(self, padding=40)
+        ttk.Label(self.welcome_frame, text="Welcome to GitSimply", font=("Segoe UI", 24, "bold")).pack(pady=(0, 10))
+        ttk.Label(self.welcome_frame, text="A simple 'save game' system for your code.", font=("Segoe UI", 12)).pack(pady=(0, 30))
+        ttk.Label(self.welcome_frame, text="To get started, select your single project folder.\nThis should be the main folder containing all your work.", justify=tk.CENTER).pack(pady=(0, 15))
+        ttk.Button(self.welcome_frame, text="Select Project Folder", command=self._select_project, style="Accent.TButton").pack(pady=10)
+        self.style = ttk.Style(self)
+        self.style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"))
+
+        # --- Main UI ---
+        self.top_frame = ttk.Frame(self, padding=(10, 10, 10, 0));
+        proj_frame = ttk.LabelFrame(self.top_frame, text="Project Folder", padding=5); proj_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.proj_label = ttk.Label(proj_frame, text="No project selected.", anchor=tk.W); self.proj_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         ttk.Button(proj_frame, text="Change", command=self._select_project).pack(side=tk.RIGHT)
-        main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL); main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        self.left_pane = ttk.Frame(main_pane, padding=10); main_pane.add(self.left_pane, weight=1)
+        self.main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
+        self.left_pane = ttk.Frame(self.main_pane, padding=10); self.main_pane.add(self.left_pane, weight=1)
+        
+        # --- Main (Branch) View ---
         self.main_view_frame = ttk.Frame(self.left_pane)
-        exp_frame = ttk.LabelFrame(self.main_view_frame, text="Branches", padding=10); exp_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        exp_frame = ttk.LabelFrame(self.main_view_frame, text="Branches (Experiments)", padding=10); exp_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         self.exp_list = tk.Listbox(exp_frame, exportselection=False, font=("Segoe UI Bold", 10)); self.exp_list.pack(fill=tk.BOTH, expand=True, pady=(0,5))
         self.exp_list.bind("<<ListboxSelect>>", self._on_branch_select)
         exp_action_frame = ttk.Frame(exp_frame); exp_action_frame.pack(fill=tk.X)
-        self.switch_button = ttk.Button(exp_action_frame, text="Enter Selected Branch", command=self._switch_branch, state=tk.DISABLED); self.switch_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        self.switch_button = ttk.Button(exp_action_frame, text="Switch to Selected Branch", command=self._switch_branch, state=tk.DISABLED); self.switch_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
         self.delete_button = ttk.Button(exp_action_frame, text="Delete Selected Branch", command=self._delete_branch, state=tk.DISABLED); self.delete_button.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
         action_frame = ttk.Frame(self.main_view_frame); action_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(35,0))
         ttk.Button(action_frame, text="Branch from Current State", command=self._new_branch).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        ttk.Button(action_frame, text=(f"Save Snapshot inside Current Branch"), command=self._save_snapshot).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
+        ttk.Button(action_frame, text="Save Current State as Snapshot", command=self._save_snapshot).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 0))
+        
+        # --- Detached (Past Version) View ---
         self.detached_view_frame = ttk.Frame(self.left_pane)
         detached_label_frame = ttk.LabelFrame(self.detached_view_frame, text="-- PAST VERSION LOADED --", padding=10); detached_label_frame.pack(fill=tk.BOTH, expand=True)
         self.detached_info_label = ttk.Label(detached_label_frame, text="WITHIN BRANCH:\nSnapshot:", justify=tk.LEFT, font=("Segoe UI", 10, "bold")); self.detached_info_label.pack(anchor=tk.W, pady=5)
         ttk.Separator(detached_label_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        ttk.Label(detached_label_frame, text="It is HIGHLY RECOMMENDED that you DO NOT edit the code while you're in this previewing state!\nSo what should we do from here?", justify=tk.LEFT).pack(anchor=tk.W, pady=5)
+        ttk.Label(detached_label_frame, text="You are inside a read-only copy of a past state.\nEdits made here will be lost unless you save them to a new branch.", justify=tk.LEFT, wraplength=300).pack(anchor=tk.W, pady=5)
         self.restore_button = ttk.Button(detached_label_frame, text="Restore this State as New Snapshot", command=self._restore_state_as_new_snapshot); self.restore_button.pack(fill=tk.X, pady=2)
         ttk.Button(detached_label_frame, text="Start New Branch from Here", command=self._new_branch_from_detached).pack(fill=tk.X, pady=2)
         ttk.Separator(detached_label_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         ttk.Button(detached_label_frame, text="Return to Present", command=self._return_to_current).pack(fill=tk.X, side=tk.BOTTOM, pady=2)
-        right_pane = ttk.Frame(main_pane, padding=10); main_pane.add(right_pane, weight=3)
+        
+        # --- Right Pane (History) ---
+        right_pane = ttk.Frame(self.main_pane, padding=10); self.main_pane.add(right_pane, weight=3)
         hist_frame = ttk.LabelFrame(right_pane, text="Snapshots within current branch", padding=10); hist_frame.pack(fill=tk.BOTH, expand=True)
         self.hist_label = ttk.Label(hist_frame, text="..."); self.hist_label.pack(fill=tk.X)
         self.unsaved_changes_label = ttk.Label(hist_frame, text="You have unsaved changes.", foreground="red", font=("Segoe UI", 9, "bold"))
@@ -298,7 +329,7 @@ class PermutationManager(tk.Tk):
         hist_action_frame = ttk.Frame(hist_frame); hist_action_frame.pack(fill=tk.X)
         self.history_action_button = ttk.Button(hist_action_frame, text="Enter Selected Snapshot", command=self._load_historical_version)
         self.history_action_button.pack(expand=True, fill=tk.X)
-        self.status_bar = ttk.Label(self, text="Welcome!", relief=tk.SUNKEN, anchor=tk.W, padding=5); self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.status_bar = ttk.Label(self, text="Welcome!", relief=tk.SUNKEN, anchor=tk.W, padding=5)
 
     def _get_selected_branch_name(self):
         indices = self.exp_list.curselection()
@@ -316,18 +347,20 @@ class PermutationManager(tk.Tk):
         branch_res = self.git_helper.get_all_branches()
         if not branch_res["success"]: self._show_error(branch_res["error"]); return
         self.exp_list.delete(0, tk.END)
-        for i, branch in enumerate(branch_res["output"].split('\n')):
+        branches = sorted([b for b in branch_res["output"].split('\n') if b])
+        for i, branch in enumerate(branches):
             is_active = branch == self.active_branch
-            display_text = f" <<CURRENTLY LOADED>>: {branch}" if is_active else f"   {branch}"
+            display_text = f" << CURRENTLY LOADED>>: {branch}" if is_active else f"   {branch}"
             self.exp_list.insert(tk.END, display_text)
             if is_active:
+                # --- FIX: Removed invalid 'font' option for itemconfig ---
                 self.exp_list.itemconfig(i, {'bg':'#e0e8f0'})
         self._update_history_for_branch(self.active_branch)
         self._on_branch_select()
 
     def _show_detached_view(self):
         self.main_view_frame.pack_forget(); self.detached_view_frame.pack(fill=tk.BOTH, expand=True)
-        info_text = (f"WITHIN BRANCH: {self.detached_from_branch}\n" f"Loaded snapshot name: '{self.detached_commit_info.get('subject', 'N/A')}'")
+        info_text = (f"WITHIN BRANCH: {self.detached_from_branch}\n" f"LOADED SNAPSHOT: '{self.detached_commit_info.get('subject', 'N/A')}'")
         self.detached_info_label.config(text=info_text)
         self.restore_button.config(state=tk.DISABLED if self.is_viewing_latest else tk.NORMAL)
         self._update_history_for_branch(self.detached_from_branch)
@@ -388,9 +421,9 @@ class PermutationManager(tk.Tk):
                 is_currently_viewed = True
 
         if is_currently_viewed:
-            self.history_action_button.config(state=tk.DISABLED)
+            self.history_action_button.config(state=tk.DISABLED, text="Currently Inside Snapshot")
         else:
-            self.history_action_button.config(state=tk.NORMAL)
+            self.history_action_button.config(state=tk.NORMAL, text="Enter Selected Snapshot")
     
     def _handle_unsaved_changes(self):
         if self.git_helper.has_changes():
@@ -449,8 +482,19 @@ class PermutationManager(tk.Tk):
         while True:
             name = simpledialog.askstring(title, prompt, parent=self)
             if name is None: return None
-            if not name or " " in name:
-                messagebox.showerror("Invalid Name", "Branch names cannot be empty or contain spaces. Please try again.", parent=self)
+            
+            # Validation checks
+            if not name.strip():
+                messagebox.showerror("Invalid Name", "Branch names cannot be empty.", parent=self)
+                continue
+            if re.search(r'\s', name):
+                messagebox.showerror("Invalid Name", "Branch names cannot contain spaces.", parent=self)
+                continue
+            if re.search(r'[\~^:?*\[\\@]', name) or ".." in name:
+                messagebox.showerror("Invalid Name", "Branch names cannot contain special characters like ~ : ? * [ \\ ^ @ or consecutive dots (..).", parent=self)
+                continue
+            if name.startswith('/') or name.endswith('/'):
+                messagebox.showerror("Invalid Name", "Branch names cannot start or end with a slash.", parent=self)
                 continue
             if name in all_branches:
                 messagebox.showerror("Name Exists", f"A branch named '{name}' already exists. Please choose a different name.", parent=self)
@@ -459,7 +503,7 @@ class PermutationManager(tk.Tk):
 
     def _new_branch(self):
         branch_name = self._prompt_for_new_branch_name(
-            "New Branch",
+            "Create New Branch",
             f"Create a new branch based on the current state of '{self.active_branch}'.\n\nEnter a name for the new branch:"
         )
         if not branch_name: return
@@ -532,5 +576,8 @@ class PermutationManager(tk.Tk):
             simple_message = "The name you chose for the branch is invalid. Please avoid special characters and spaces."
         elif "A branch named" in message and "already exists" in message:
             simple_message = "A branch with that name already exists. Please choose a different name."
+        elif "invalid refspec" in message:
+            simple_message = f"The name specified is not a valid reference. This can happen with invalid branch or commit names.\n\nDetails: {message}"
+
 
         messagebox.showerror("Error", simple_message, parent=self)

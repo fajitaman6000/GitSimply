@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "C:\Users\Trey\Desktop\GitHelper\main.py", line 11, in <module>
+    app = PermutationManager()
+  File "C:\Users\Trey\Desktop\GitHelper\app.py", line 31, in __init__
+    self._initialize_project(self.project_root)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Trey\Desktop\GitHelper\app.py", line 98, in _initialize_project
+    self.update_ui_state()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Trey\Desktop\GitHelper\app.py", line 160, in update_ui_state
+    self._show_main_view()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Trey\Desktop\GitHelper\app.py", line 357, in _show_main_view
+    self.exp_list.itemconfig(i, {'bg':'#e0e8f0', 'font': ('Segoe UI', 10, 'bold')})
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\tkinter\__init__.py", line 3477, in itemconfigure
+    return self._configure(('itemconfigure', index), cnf, kw)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\tkinter\__init__.py", line 1812, in _configure
+    self.tk.call(_flatten((self._w, cmd)) + self._options(cnf))
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_tkinter.TclError: unknown option "-font"

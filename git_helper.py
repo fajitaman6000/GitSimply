@@ -3,7 +3,7 @@ import subprocess
 import os
 import shlex
 
-SESSION_META_DIR = ".manager_meta"
+SESSION_META_DIR = ".gitsimply_meta"
 
 class GitHelper:
     def __init__(self, project_root):
@@ -23,7 +23,7 @@ class GitHelper:
             cmd_str = " ".join(e.cmd)
             error_message = f"Command failed:\n`{cmd_str}`\n\nError Details:\n{e.stderr.strip()}"
             return {"success": False, "error": error_message}
-        except FileNotFoundError: return {"success": False, "error": "Git command not found. Is Git installed?"}
+        except FileNotFoundError: return {"success": False, "error": "Git command not found. Is Git installed and in your system's PATH?"}
 
     def initialize_repo(self):
         """
@@ -40,27 +40,39 @@ class GitHelper:
             self._run_command("config user.name 'GitSimply'")
             self._run_command("config user.email 'user@gitsimply.local'")
 
-        # --- FIX: Create a comprehensive, user-friendly .gitignore ---
         gitignore_path = os.path.join(self.project_root, ".gitignore")
         
-        # Define the block of text we want to ensure is in the gitignore.
-        # The header acts as a unique identifier for our block.
         gitignore_block = f"""
 # --- GitSimply Managed ---
 # These entries are automatically managed by GitSimply to ignore app files,
 # caches, and other common files that should not be versioned.
 
 # Application-specific
-{SESSION_META_DIR}/
+/{SESSION_META_DIR}/
 config.json
 gitsimply_crash.log
 
 # Python
 __pycache__/
 *.pyc
-.venv/
-venv/
+*.pyo
+*.pyd
+.Python
 env/
+venv/
+.venv/
+
+# IDE & Editor Caches
+.vscode/
+.idea/
+*.swp
+*~
+
+# Node.js (for creative coding, web dev, etc.)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # OS-specific
 .DS_Store
@@ -72,18 +84,17 @@ Thumbs.db
         if os.path.exists(gitignore_path):
             with open(gitignore_path, "r", encoding='utf-8') as f:
                 content = f.read()
-                # Check for our unique header to see if our block is already there.
                 if "# --- GitSimply Managed ---" in content:
                     needs_write = False
         
         if needs_write:
-            with open(gitignore_path, "a", encoding='utf-8') as f:
-                # Add a newline before our block if the file is not empty and doesn't end with one.
+            # --- FIX: Changed mode from "a" to "a+" to allow reading ---
+            with open(gitignore_path, "a+", encoding='utf-8') as f:
                 if os.path.getsize(gitignore_path) > 0:
                     f.seek(0, os.SEEK_END)
                     f.seek(f.tell() - 1, os.SEEK_SET)
                     if f.read(1) != '\n':
-                        f.write('\n')
+                        f.write('\n\n')
                 f.write(gitignore_block.strip() + "\n")
 
 
@@ -128,7 +139,7 @@ Thumbs.db
             return {"success": False, "error": all_branches_res["error"]}
         
         all_branches = all_branches_res["output"].split('\n')
-        other_branches = [b for b in all_branches if b != branch_to_check and b]
+        other_branches = [b for b in all_branches if b.strip() and b.strip() != branch_to_check]
 
         if not other_branches:
             # If there are no other branches, it can't be merged into them.
