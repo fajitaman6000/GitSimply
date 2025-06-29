@@ -285,7 +285,7 @@ class PermutationManager(tk.Tk):
         
         # --- Main (Branch) View ---
         self.main_view_frame = ttk.Frame(self.left_pane)
-        exp_frame = ttk.LabelFrame(self.main_view_frame, text="Branches (Experiments)", padding=10); exp_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        exp_frame = ttk.LabelFrame(self.main_view_frame, text="Branches", padding=10); exp_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         self.exp_list = tk.Listbox(exp_frame, exportselection=False, font=("Segoe UI Bold", 10)); self.exp_list.pack(fill=tk.BOTH, expand=True, pady=(0,5))
         self.exp_list.bind("<<ListboxSelect>>", self._on_branch_select)
         exp_action_frame = ttk.Frame(exp_frame); exp_action_frame.pack(fill=tk.X)
@@ -301,8 +301,8 @@ class PermutationManager(tk.Tk):
         self.detached_info_label = ttk.Label(detached_label_frame, text="WITHIN BRANCH:\nSnapshot:", justify=tk.LEFT, font=("Segoe UI", 10, "bold")); self.detached_info_label.pack(anchor=tk.W, pady=5)
         ttk.Separator(detached_label_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         ttk.Label(detached_label_frame, text="You are inside a read-only copy of a past state.\nEdits made here will be lost unless you save them to a new branch.", justify=tk.LEFT, wraplength=300).pack(anchor=tk.W, pady=5)
-        self.restore_button = ttk.Button(detached_label_frame, text="Restore this State as New Snapshot", command=self._restore_state_as_new_snapshot); self.restore_button.pack(fill=tk.X, pady=2)
-        ttk.Button(detached_label_frame, text="Start New Branch from Here", command=self._new_branch_from_detached).pack(fill=tk.X, pady=2)
+        self.restore_button = ttk.Button(detached_label_frame, text="Restore to SELECTED snapshot contents", command=self._restore_state_as_new_snapshot); self.restore_button.pack(fill=tk.X, pady=2)
+        ttk.Button(detached_label_frame, text="Start New Branch from CURRENT file state", command=self._new_branch_from_detached).pack(fill=tk.X, pady=2)
         ttk.Separator(detached_label_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         ttk.Button(detached_label_frame, text="Return to Present", command=self._return_to_current).pack(fill=tk.X, side=tk.BOTTOM, pady=2)
         
