@@ -35,12 +35,13 @@ class GitHelper:
         is_new_repo = not os.path.exists(os.path.join(self.project_root, ".git"))
 
         if is_new_repo:
-            self._run_command("init -b main")
-            self._run_command("config user.name 'PermutationManager'")
-            self._run_command("config user.email 'user@permutation.manager'")
+            init_res = self._run_command("init -b main")
+            if not init_res["success"]: return init_res
+            self._run_command("config user.name 'GitSimply'")
+            self._run_command("config user.email 'user@gitsimply.local'")
 
         gitignore_path = os.path.join(self.project_root, ".gitignore")
-        entry_to_add = f"\n# Permutation Manager Files\n{SESSION_META_DIR}/\n"
+        entry_to_add = f"\n# GitSimply Metadata\n{SESSION_META_DIR}/\n"
         
         needs_write = True
         if os.path.exists(gitignore_path):
@@ -55,10 +56,12 @@ class GitHelper:
 
         if is_new_repo:
             self._run_command("add .gitignore")
-            self._run_command("commit -m 'Initial commit: Add .gitignore'")
+            self._run_command("commit -m 'Initial commit: Add .gitignore for GitSimply'")
 
+            # Now, add all other files that might exist
             self._run_command("add .")
             commit_res = self._run_command("commit -m 'Initial Project State'")
+            # It's not an error if there were no other files to commit
             if not commit_res["success"] and "nothing to commit" in commit_res.get("error", ""):
                 return {"success": True}
             return commit_res
@@ -92,7 +95,7 @@ class GitHelper:
             return {"success": False, "error": all_branches_res["error"]}
         
         all_branches = all_branches_res["output"].split('\n')
-        other_branches = [b for b in all_branches if b != branch_to_check]
+        other_branches = [b for b in all_branches if b != branch_to_check and b]
 
         if not other_branches:
             # If there are no other branches, it can't be merged into them.
@@ -124,7 +127,7 @@ class GitHelper:
     def checkout(self, target):
         return self._run_command(f"checkout {shlex.quote(target)}")
     def create_branch(self, new_branch_name, start_point='main'):
-        return self._run_command(f"checkout -b {shlex.quote(new_branch_name)} {shlex.quote(start_point)}")
+        return self._run_command(f"branch {shlex.quote(new_branch_name)} {shlex.quote(start_point)}")
     def delete_branch(self, branch_name):
         return self._run_command(f"branch -D {shlex.quote(branch_name)}")
     def get_current_commit_hash(self):
@@ -132,13 +135,14 @@ class GitHelper:
         return self._run_command("rev-parse HEAD")
     def get_history(self, branch_name):
         sep, date_format = "|||GIT_SEP|||", "--date=format-local:'%Y-%m-%d %I:%M %p'"
-        command = f"log {shlex.quote(branch_name)} --pretty=format:'%h{sep}%ad{sep}%s' {date_format} --"
+        command = f"log {shlex.quote(branch_name)} --pretty=format:'%H{sep}%ad{sep}%s' {date_format} --"
         result = self._run_command(command)
         history = []
         if result["success"] and result["output"]:
             for line in result["output"].split('\n'):
                 parts = line.split(sep)
                 if len(parts) == 3: history.append({"hash": parts[0], "date": parts[1], "subject": parts[2]})
+        # Invert history to show oldest first, newest last.
         return {"success": True, "data": history}
 
     def discard_changes(self):

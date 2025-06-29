@@ -119,7 +119,7 @@ class PermutationManager(tk.Tk):
                             self.destroy()
                         return
 
-                    # Create a new branch from the detached HEAD position.
+                    # Create a new branch from the detached HEAD position and check out to it.
                     result = self.git_helper.create_branch(branch_name, start_point=current_hash)
                     if not result['success']:
                         self._show_error(f"Failed to create recovery branch '{branch_name}':\n{result['error']}")
